@@ -92,7 +92,6 @@ namespace eval sfpplus {
 
       puts "Checking SFP-Network for palausability:"
       # Check if Board supports enough SFP-Ports
-      puts [llength $ky]
       if { [llength $ky]-1 > $available_ports} {
         puts "To many SFP-Ports specified (Max: $available_ports)"
         exit
@@ -139,10 +138,16 @@ namespace eval sfpplus {
       variable x [lindex $kern 0]
       dict set $x "vlnv" " "
       dict with  x {
+        if  {[dict exists $x "allow_reuse_PEs"]} {
+          set allow_reuse_PEs [dict get $x "allow_reuse_PEs"]
+        } else {
+          set allow_reuse_PEs false
+        }
         puts "    ID: $ID"
         puts "    Count: $Count"
         puts "    Recieve:  $interface_rx"
         puts "    Transmit: $interface_tx"
+        puts "    Allow Reuse: $allow_reuse_PEs"
         variable kernelID [find_ID $ID]
         if { $kernelID != -1 } {
           variable newCount [expr {[dict get $composition $kernelID count] - $Count}]
@@ -151,7 +156,9 @@ namespace eval sfpplus {
             puts "Not Enough Instances of Kernel $ID"
             exit
           }
-          [dict set composition $kernelID count $newCount]
+          if {!$allow_reuse_PEs} {
+            [dict set composition $kernelID count $newCount]
+          }
         } else {
           puts "Kernel not found"
           exit
@@ -172,10 +179,16 @@ namespace eval sfpplus {
       variable x [lindex $kern $c]
       dict set $x "vlnv" " "
       dict with  x {
+        if  {[dict exists $x "allow_reuse_PEs"]} {
+          set allow_reuse_PEs [dict get $x "allow_reuse_PEs"]
+        } else {
+          set allow_reuse_PEs false
+        }
         puts "    ID: $ID"
         puts "    Count: $Count"
         puts "    Recieve:  $interface_rx"
         puts "    Transmit: $interface_tx"
+        puts "    Allow Reuse: $allow_reuse_PEs"
         variable kernelID [find_ID $ID]
         if { $kernelID != -1 } {
           variable newCount [expr {[dict get $composition $kernelID count] - $Count}]
@@ -184,7 +197,9 @@ namespace eval sfpplus {
             puts "Not Enough Instances of Kernel $ID"
             exit
           }
-          [dict set composition $kernelID count $newCount]
+          if {!$allow_reuse_PEs} {
+            [dict set composition $kernelID count $newCount]
+          }
         } else {
           puts "Kernel not found"
           exit
@@ -202,10 +217,16 @@ namespace eval sfpplus {
       variable x [lindex $kern $c]
       dict set $x "vlnv" " "
       dict with  x {
+        if  {[dict exists $x "allow_reuse_PEs"]} {
+          set allow_reuse_PEs [dict get $x "allow_reuse_PEs"]
+        } else {
+          set allow_reuse_PEs false
+        }
         puts "    ID: $ID"
         puts "    Count: $Count"
         puts "    Recieve:  $interface_rx"
         puts "    Transmit: $interface_tx"
+        puts "    Allow Reuse: $allow_reuse_PEs"
         variable kernelID [find_ID $ID]
         if { $kernelID != -1 } {
           variable newCount [expr {[dict get $composition $kernelID count] - $Count}]
@@ -213,9 +234,12 @@ namespace eval sfpplus {
           puts "VLNV: $vlnv"
           if { $newCount < 0} {
             puts "Not Enough Instances of Kernel $ID"
-          [dict set composition $kernelID count $newCount]
-          exit
-        }
+            exit
+          }
+
+          if {!$allow_reuse_PEs} {
+            [dict set composition $kernelID count $newCount]
+          }
         } else {
           puts "Kernel not found"
           exit
@@ -527,13 +551,16 @@ namespace eval sfpplus {
     dict with kernel {
       variable kern [find_ID $ID]
       variable pes [lrange [get_bd_cells /arch/target_ip_[format %02d $kern]_*] 0 $Count-1]
-      move_bd_cells [get_bd_cells Port_$PORT] $pes
-
+      #move_bd_cells [get_bd_cells Port_$PORT] $pes
       if {$sync} {
-        puts "Connecting [get_bd_intf_pins AXIS_RX] to [get_bd_intf_pins [lindex $pes 0]/$interface_rx]"
-        connect_bd_intf_net [get_bd_intf_pins AXIS_RX] [get_bd_intf_pins [lindex $pes 0]/$interface_rx]
-        puts "Connecting [get_bd_intf_pins AXIS_TX] to [get_bd_intf_pins [lindex $pes 0]/$interface_tx]"
-        connect_bd_intf_net [get_bd_intf_pins AXIS_TX] [get_bd_intf_pins [lindex $pes 0]/$interface_tx]
+        create_bd_intf_pin -mode Master  -vlnv xilinx.com:interface:axis_rtl:1.0 AXIS_RX_OUT
+        create_bd_intf_pin -mode Slave -vlnv xilinx.com:interface:axis_rtl:1.0 AXIS_TX_OUT
+        connect_bd_intf_net [get_bd_intf_pins AXIS_RX] [get_bd_intf_pins AXIS_RX_OUT]
+        connect_bd_intf_net [get_bd_intf_pins AXIS_TX] [get_bd_intf_pins AXIS_TX_OUT]
+        puts "Connecting [get_bd_intf_pins AXIS_RX_OUT] to [get_bd_intf_pins [lindex $pes 0]/$interface_rx]"
+        connect_bd_intf_net [get_bd_intf_pins AXIS_RX_OUT] [get_bd_intf_pins [lindex $pes 0]/$interface_rx]
+        puts "Connecting [get_bd_intf_pins AXIS_TX_OUT] to [get_bd_intf_pins [lindex $pes 0]/$interface_tx]"
+        connect_bd_intf_net [get_bd_intf_pins AXIS_TX_OUT] [get_bd_intf_pins [lindex $pes 0]/$interface_tx]
 
         variable clks [get_bd_pins -of_objects [lindex $pes 0] -filter {type == clk}]
         if {[llength $clks] > 1} {
@@ -545,14 +572,14 @@ namespace eval sfpplus {
 
                 variable rst [get_bd_pins [lindex $pes 0]/[get_property CONFIG.ASSOCIATED_RESET $clk]]
                 disconnect_bd_net [get_bd_nets -of_objects $rst]  $rst
-                connect_bd_net [get_bd_pins /arch/sfp_resetn] $rst
+                connect_bd_net [get_bd_pins /arch/sfp_resetn_${PORT}] $rst
               } elseif {[regexp $interface_tx $interfaces]} {
                 disconnect_bd_net [get_bd_nets -of_objects $clk]    $clk
                 connect_bd_net [get_bd_pins sfp_clock] $clk
 
                 variable rst [get_bd_pins [lindex $pes 0]/[get_property CONFIG.ASSOCIATED_RESET $clk]]
                 disconnect_bd_net [get_bd_nets -of_objects $rst]  $rst
-                connect_bd_net [get_bd_pins /arch/sfp_resetn] $rst
+                connect_bd_net [get_bd_pins /arch/sfp_resetn_${PORT}] $rst
               }
             }
         } else {
