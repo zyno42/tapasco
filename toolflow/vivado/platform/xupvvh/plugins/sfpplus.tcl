@@ -40,9 +40,12 @@ if {[tapasco::is_feature_enabled "SFPPLUS"]} {
 namespace eval sfpplus {
 
   variable available_ports 4
-  variable refclk_pins           {"P13" "V13" "AD13" "AJ15"}
-  variable gt_quads              {"Quad_X1Y11" "Quad_X1Y9" "Quad_X1Y6" "Quad_X1Y4"}
-  variable gt_lanes              {"X1Y44" "X1Y45" "X1Y46" "X1Y47" "X1Y36" "X1Y37" "X1Y38" "X1Y39" "X1Y24" "X1Y25" "X1Y26" "X1Y27" "X1Y16" "X1Y17" "X1Y18" "X1Y19"}
+  #variable refclk_pins           {"P13" "V13" "AD13" "AJ15"}
+  #variable gt_quads              {"Quad_X1Y11" "Quad_X1Y9" "Quad_X1Y6" "Quad_X1Y4"}
+  #variable gt_lanes              {"X1Y44" "X1Y45" "X1Y46" "X1Y47" "X1Y36" "X1Y37" "X1Y38" "X1Y39" "X1Y24" "X1Y25" "X1Y26" "X1Y27" "X1Y16" "X1Y17" "X1Y18" "X1Y19"}
+  variable refclk_pins           {"AJ15" "V13" "AD13" "P13"}
+  variable gt_quads              {"Quad_X1Y4" "Quad_X1Y9" "Quad_X1Y6" "Quad_X1Y11"}
+  variable gt_lanes              {"X1Y16" "X1Y17" "X1Y18" "X1Y19" "X1Y36" "X1Y37" "X1Y38" "X1Y39" "X1Y24" "X1Y25" "X1Y26" "X1Y27" "X1Y44" "X1Y45" "X1Y46" "X1Y47"}
 
   proc find_ID {input} {
     variable composition
