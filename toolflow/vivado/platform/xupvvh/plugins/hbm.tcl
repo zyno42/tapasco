@@ -89,7 +89,7 @@ namespace eval hbm {
   }
 
   # Creates HBM configuration for given number of active HBM ports
-  proc create_hbm_properties {numInterfaces} {
+  proc create_hbm_properties {numInterfaces hbmPorts hbmMCs bothStacks} {
     # disable APB debug port
     # disable AXI crossbar (global addressing)
     # configure AXI clock freq
@@ -105,7 +105,7 @@ namespace eval hbm {
     ]
 
     # configure stacks used
-    if {$numInterfaces <= 16} {
+    if {!$bothStacks} {
       set maxSlaves 16
       lappend hbm_properties \
         CONFIG.USER_HBM_DENSITY {4GB} \
@@ -118,26 +118,32 @@ namespace eval hbm {
 
 
     # enable HBM ports and memory controllers as required (two ports per mc)
-    for {set i $numInterfaces} {$i < $maxSlaves} {incr i} {
+    for {set i 0} {$i < $maxSlaves} {incr i} {
       set saxi [format %02s $i]
-      lappend hbm_properties CONFIG.USER_SAXI_${saxi} {false}
+      if {!($saxi in $hbmPorts)} {
+        lappend hbm_properties CONFIG.USER_SAXI_${saxi} {false}
+      }
       if ([even $i]) {
         set mc [format %02s [expr {$i / 2}]]
-        lappend hbm_properties CONFIG.USER_MC_ENABLE_${mc} {false}
+        if {!($mc in $hbmMCs)} {
+          lappend hbm_properties CONFIG.USER_MC_ENABLE_${mc} {false}
+        }
       }
     }
 
 
     # configure memory controllers
-    for {set i 0} {$i < $maxSlaves} {incr i} {
-      if ([even $i]) {
-        set mc [format %s [expr {$i / 2}]]
-        lappend hbm_properties CONFIG.USER_MC${mc}_ECC_BYPASS false
-        lappend hbm_properties CONFIG.USER_MC${mc}_ECC_CORRECTION false
-        lappend hbm_properties CONFIG.USER_MC${mc}_EN_DATA_MASK true
-        lappend hbm_properties CONFIG.USER_MC${mc}_TRAFFIC_OPTION {Linear}
-        lappend hbm_properties CONFIG.USER_MC${mc}_BG_INTERLEAVE_EN true
+    foreach mc $hbmMCs {
+      if {$mc < 10} {
+        set mc_index [string range $mc 1 end]
+      } else {
+        set mc_index $mc
       }
+      lappend hbm_properties CONFIG.USER_MC${mc_index}_ECC_BYPASS false
+      lappend hbm_properties CONFIG.USER_MC${mc_index}_ENABLE_ECC_CORRECTION false
+      lappend hbm_properties CONFIG.USER_MC${mc_index}_EN_DATA_MASK true
+      lappend hbm_properties CONFIG.USER_MC${mc_index}_TRAFFIC_OPTION {Linear}
+      lappend hbm_properties CONFIG.USER_MC${mc_index}_BG_INTERLEAVE_EN true
     }
 
     return $hbm_properties
@@ -192,25 +198,25 @@ namespace eval hbm {
   }
 
   # Connects a range of HBM AXI clocks with the outputs of a clocking infrastructure
-  proc connect_clocking {clocking hbm startInterface numInterfaces} {
-    for {set i 0} {$i < $numInterfaces} {incr i} {
-        set hbm_index [format %02s [expr $i + $startInterface]]
-        set block_index [expr $i < 16 ? 0 : 1]
-        set clk_index [expr ($i % 16) / 2]
-        set clk_index [expr $clk_index < 7 ? $clk_index : 6]
-        connect_bd_net [get_bd_pins $clocking/axi_reset] [get_bd_pins $hbm/AXI_${hbm_index}_ARESET_N]
-        connect_bd_net [get_bd_pins $clocking/axi_clk_${clk_index}] [get_bd_pins $hbm/AXI_${hbm_index}_ACLK]
+  proc connect_clocking {clocking hbm hbmPorts upper} {
+    for {set i 0} {$i < [llength $hbmPorts]} {incr i} {
+        set hbm_index [lindex $hbmPorts $i]
+        if {($upper && ($hbm_index >= 16)) || (!$upper && ($hbm_index < 16))} {
+          set clk_index [expr ($i % 16) / 2]
+          set clk_index [expr $clk_index < 7 ? $clk_index : 6]
+          connect_bd_net [get_bd_pins $clocking/axi_reset] [get_bd_pins $hbm/AXI_${hbm_index}_ARESET_N]
+          connect_bd_net [get_bd_pins $clocking/axi_clk_${clk_index}] [get_bd_pins $hbm/AXI_${hbm_index}_ACLK]
+        }
       }
   }
 
   # Ṕrovides HBM access for the given AXI-MM masters
-  proc generate_hbm_core {hbmInterfaces} {
-    if {[tapasco::is_feature_enabled "HBM"]} {
+  proc generate_hbm_core {hbmInterfaces hbmPorts hbmMCs bothStacks} {
+    #if {[tapasco::is_feature_enabled "HBM"]} {
       puts "Generating HBM Core"
       set numInterfaces [llength $hbmInterfaces]
-      set bothStacks [expr ($numInterfaces > 16)]
 
-      set hbm_properties [create_hbm_properties $numInterfaces]
+      set hbm_properties [create_hbm_properties $numInterfaces $hbmPorts $hbmMCs $bothStacks]
 
       # create and configure HBM IP
       set hbm [ create_bd_cell -type ip -vlnv xilinx.com:ip:hbm:1.0 "hbm_0" ]
@@ -229,7 +235,7 @@ namespace eval hbm {
 
       # create and connect clocking infrastructure for left stack
       set clocking_0 [create_clocking "clocking_0" [get_bd_intf_ports /hbm_ref_clk_0]]
-      connect_clocking $clocking_0 $hbm 0 [expr min($numInterfaces,16)]
+      connect_clocking $clocking_0 $hbm $hbmPorts false
       connect_bd_net [get_bd_pins $clocking_0/hbm_ref_clk] [get_bd_pins $hbm/HBM_REF_CLK_0]
 
       connect_bd_net [get_bd_pins $clocking_0/hbm_ref_clk] [get_bd_pins $hbm/APB_0_PCLK]
@@ -238,7 +244,7 @@ namespace eval hbm {
       if {$bothStacks} {
         # create and connect clocking infrastructure for right stack
         set clocking_1 [create_clocking "clocking_1" [get_bd_intf_ports /hbm_ref_clk_1]]
-        connect_clocking $clocking_1 $hbm 16 [expr $numInterfaces - 16]
+        connect_clocking $clocking_1 $hbm $hbmPorts true
         connect_bd_net [get_bd_pins $clocking_1/hbm_ref_clk] [get_bd_pins $hbm/HBM_REF_CLK_1]
 
         connect_bd_net [get_bd_pins $clocking_1/hbm_ref_clk] [get_bd_pins $hbm/APB_1_PCLK]
@@ -251,15 +257,13 @@ namespace eval hbm {
 
       for {set i 0} {$i < $numInterfaces} {incr i} {
         variable master [lindex $hbmInterfaces $i]
+        set hbm_index [lindex $hbmPorts $i]
 
         set pin [create_bd_intf_pin -mode Master -vlnv xilinx.com:interface:aximm_rtl:1.0 /arch/M_AXI_HBM_${i}]
         connect_bd_intf_net $pin $master
 
-        set hbm_index [format %02s $i]
-
         # create smartconnect for clock domain conversion, protocol conversion (AXI4->AXI3) and data width conversion
-        set converter [create_bd_cell -type ip -vlnv xilinx.com:ip:smartconnect:1.0 smartconnect_${i}]
-        set_property -dict [list CONFIG.NUM_SI {1} CONFIG.NUM_CLKS {2} CONFIG.HAS_ARESETN {0}] $converter
+        set converter [tapasco::ip::create_axi_sc smartconnect_${i} 2 1 3]
         
         # create connections between PE and smartconnect, and smartconnect and HBM
 
@@ -280,24 +284,18 @@ namespace eval hbm {
           connect_bd_intf_net $pin [get_bd_intf_pins $converter/S00_AXI]
         }
 
-        set address_offset [tapasco::ip::create_axioffset_hbm offset_${i}]
-        set offset [format "0x0000000%02x0000000" $i]
-        set_property -dict [list CONFIG.offset $offset CONFIG.offset_bits {5}] $address_offset
-        connect_bd_intf_net [get_bd_intf_pins $converter/M00_AXI] [get_bd_intf_pins $address_offset/S_AXI]
-        connect_bd_net [get_bd_pins $hbm/AXI_${hbm_index}_ACLK] [get_bd_pins $address_offset/CLK]
-        connect_bd_net [get_bd_pins $hbm/AXI_${hbm_index}_ARESET_N] [get_bd_pins $address_offset/RST_N]
 
         if {[platform::is_regslice_enabled "hbm_hbm" false] || [platform::is_regslice_enabled [format "hbm_hbm%s" $hbm_index] false]} {
           # insert register slice between smartconnect and HBM
           set regslice_post [create_bd_cell -type ip -vlnv xilinx.com:ip:axi_register_slice:2.1 regslice_post_${i}]
           set_property -dict [list CONFIG.REG_AW {15} CONFIG.REG_AR {15} CONFIG.REG_W {15} CONFIG.REG_R {15} CONFIG.REG_B {15} CONFIG.USE_AUTOPIPELINING {1}] $regslice_post
 
-          connect_bd_intf_net [get_bd_intf_pins $address_offset/M_AXI] [get_bd_intf_pins $regslice_post/S_AXI]
+          connect_bd_intf_net [get_bd_intf_pins $converter/M00_AXI] [get_bd_intf_pins $regslice_post/S_AXI]
           connect_bd_intf_net [get_bd_intf_pins $regslice_post/M_AXI] [get_bd_intf_pins $hbm/SAXI_${hbm_index}]
           connect_bd_net [get_bd_pins $hbm/AXI_${hbm_index}_ACLK] [get_bd_pins $regslice_post/aclk]
           connect_bd_net [get_bd_pins $hbm/AXI_${hbm_index}_ARESET_N] [get_bd_pins $regslice_post/aresetn]
         } else {
-          connect_bd_intf_net [get_bd_intf_pins $address_offset/M_AXI] [get_bd_intf_pins $hbm/SAXI_${hbm_index}]
+          connect_bd_intf_net [get_bd_intf_pins $converter/M00_AXI] [get_bd_intf_pins $hbm/SAXI_${hbm_index}]
         }
 
       }
@@ -324,17 +322,18 @@ namespace eval hbm {
       }
 
 
-    }
+    #}
   }
 
   proc addressmap {{args {}}} {
-    if {[tapasco::is_feature_enabled "HBM"]} {
-      set hbmInterfaces [get_hbm_interfaces]
-      for {set i 0} {$i < [llength $hbmInterfaces]} {incr i} {
-        set args [lappend args M_AXI_HBM_${i} [list 0 0 -1 ""]]
+    #if {[tapasco::is_feature_enabled "HBM"]} {
+      set masters [lsort -dictionary [tapasco::get_aximm_interfaces [get_bd_cells /arch/target_ip_*]]]
+      for {set i 0} {$i < [llength $masters]} {incr i} {
+        set args [lappend args M_AXI_HBM_${i} [list "skip"]]
+        set args [lappend args HBM_DMA_${i} [list "skip"]]
       }
       
-    }
+    #}
     return $args
   }
 

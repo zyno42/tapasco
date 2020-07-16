@@ -21,12 +21,15 @@ namespace eval platform {
   set platform_dirname "xupvvh"
   set pcie_width "x16"
 
+  variable hbmPorts [list 00 04 08 12 16 20 24 28]
+  variable hbmMCs [list 00 02 04 06 08 10 12 14]
+  variable bothStacks true
+
   source $::env(TAPASCO_HOME_TCL)/platform/pcie/pcie_base.tcl
 
-  if {[tapasco::is_feature_enabled "HBM"]} {
 
     proc get_ignored_segments { } {
-      set hbmInterfaces [hbm::get_hbm_interfaces]
+      set hbmInterfaces  [list 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31]
       set ignored [list]
       set numInterfaces [llength $hbmInterfaces]
       if {[expr $numInterfaces % 2] == 1} {
@@ -39,75 +42,64 @@ namespace eval platform {
           set axi_index [format %02s $i]
           set mem_index [format %02s $j]
           lappend ignored "/hbm/hbm_0/SAXI_${axi_index}/HBM_MEM${mem_index}"
+          lappend ignored "M_AXI_HBM_${i}"
         }
       }
       return $ignored
     }
 
-  }
-
   proc create_mig_core {name} {
-    puts "Creating MIG core for DDR ..."
+    set inst [current_bd_instance .]
 
+    set mig [create_bd_cell -type hier $name]
+    current_bd_instance -quiet $mig
+    set c0_ddr4_aresetn [create_bd_pin -type rst -dir I c0_ddr4_aresetn]
+    set c0_init_calib_complete [create_bd_pin -dir O c0_init_calib_complete]
+    set c0_ddr4_ui_clk [create_bd_pin -dir O -type clk c0_ddr4_ui_clk]
+    set c0_ddr4_ui_clk_sync_rst [create_bd_pin -dir O -type rst c0_ddr4_ui_clk_sync_rst]
+    set C0_DDR4_S_AXI [create_bd_intf_pin -mode Slave -vlnv xilinx.com:interface:aximm_rtl:1.0 C0_DDR4_S_AXI]
 
-    # create MIG core
-    set mig [tapasco::ip::create_us_ddr ${name}]
-    make_bd_intf_pins_external [get_bd_intf_pins $mig/C0_DDR4]
+    set masters [lsort -dictionary [tapasco::get_aximm_interfaces [get_bd_cells /arch/target_ip_*]]]
 
-    # create system reset
-    set sys_rst_l [create_bd_port -dir I -type rst sys_rst_l]
-    set sys_rst_inverter [create_bd_cell -type ip -vlnv xilinx.com:ip:util_vector_logic:2.0 sys_rst_inverter]
-    set_property -dict [list CONFIG.C_SIZE {1} CONFIG.C_OPERATION {not} CONFIG.LOGO_FILE {data/sym_notgate.png}] $sys_rst_inverter
-    connect_bd_net $sys_rst_l [get_bd_pins $sys_rst_inverter/Op1]
-    connect_bd_net [get_bd_pins $sys_rst_inverter/Res] [get_bd_pins $mig/sys_rst]
+    variable hbmPorts
+    variable hbmMCs
+    variable bothStacks
 
-    # create system clock
-    set sys_clk [ create_bd_intf_port -mode Slave -vlnv xilinx.com:interface:diff_clock_rtl:1.0 ddr4_sys_clk_1 ]
-    connect_bd_intf_net $sys_clk [get_bd_intf_pins $mig/C0_SYS_CLK]
-    set_property CONFIG.FREQ_HZ 100000000 $sys_clk
+    set hbm [tapasco::subsystem::create "/hbm"]
+    current_bd_instance -quiet $hbm
+    hbm::create_refclk_ports $bothStacks
 
-    # configure MIG core
-    set part_file "[get_property DIRECTORY [current_project]]/MTA18ADF2G72PZ-2G3.csv"
-    if { [file exists $part_file] == 1} {
-      puts "Delete MIG configuration from project directory"
-      file delete $part_file
+    hbm::generate_hbm_core $masters $hbmPorts $hbmMCs $bothStacks
+    current_bd_instance -quiet $mig
+
+    set clk_wiz [tapasco::ip::create_clk_wiz clk_wiz]
+    set_property -dict [list CONFIG.PRIM_SOURCE {No_buffer} CONFIG.CLKOUT1_REQUESTED_OUT_FREQ {300} CONFIG.RESET_TYPE {ACTIVE_LOW} CONFIG.NUM_OUT_CLKS {1} CONFIG.RESET_PORT {resetn}] $clk_wiz
+    connect_bd_net [get_bd_pins /hbm/clocking_0/ibuf/IBUF_OUT] [get_bd_pins $clk_wiz/clk_in1]
+    connect_bd_net [get_bd_pins /memory/mem_peripheral_aresetn] [get_bd_pins $clk_wiz/resetn]
+
+    set reset_generator [tapasco::ip::create_logic_vector reset_generator]
+    set_property -dict [list CONFIG.C_SIZE {1} CONFIG.C_OPERATION {and} CONFIG.LOGO_FILE {data/sym_andgate.png}] $reset_generator
+
+    connect_bd_net [get_bd_pins /memory/mem_peripheral_aresetn] [get_bd_pins $reset_generator/Op1]
+    connect_bd_net [get_bd_pins $clk_wiz/locked] [get_bd_pins $reset_generator/Op2]
+
+    connect_bd_net $c0_ddr4_ui_clk_sync_rst [get_bd_pins $reset_generator/Res]
+    connect_bd_net $c0_init_calib_complete [get_bd_pins $reset_generator/Res]
+    connect_bd_net $c0_ddr4_ui_clk [get_bd_pins $clk_wiz/clk_out1]
+
+    set dma_ic [tapasco::ip::create_axi_sc dma_ic 1 [llength $hbmPorts]]
+    connect_bd_net [get_bd_pins $dma_ic/aclk] $c0_ddr4_ui_clk
+    connect_bd_intf_net [get_bd_intf_pins $dma_ic/S00_AXI] $C0_DDR4_S_AXI
+    for {set i 0} {$i < [llength $hbmPorts]} {incr i} {
+      set index [format %02s $i]
+      set hbm_index [lindex $hbmPorts $i]
+      set HBM_DMA [create_bd_intf_pin -mode Master -vlnv xilinx.com:interface:aximm_rtl:1.0 HBM_DMA_${i}]
+      connect_bd_intf_net [get_bd_intf_pins $dma_ic/M${index}_AXI] $HBM_DMA
+      connect_bd_intf_net $HBM_DMA [get_bd_intf_pins /hbm/smartconnect_${i}/S01_AXI]
+      connect_bd_net $c0_ddr4_ui_clk [get_bd_pins /hbm/smartconnect_${i}/aclk2]
     }
-    puts "Copying MIG configuration to project directory"
-    file copy "$::env(TAPASCO_HOME_TCL)/platform/xupvvh/MTA18ADF2G72PZ-2G3.csv" $part_file
+    current_bd_instance -quiet $inst
 
-    set properties  [list CONFIG.C0.DDR4_TimePeriod {833} \
-      CONFIG.C0.DDR4_InputClockPeriod {9996} \
-      CONFIG.C0.DDR4_CLKOUT0_DIVIDE {5} \
-      CONFIG.C0.DDR4_MemoryType {RDIMMs} \
-      CONFIG.C0.DDR4_MemoryPart {MTA18ADF2G72PZ-2G3} \
-      CONFIG.C0.DDR4_DataWidth {72} \
-      CONFIG.C0.DDR4_DataMask {NONE} \
-      CONFIG.C0.DDR4_CasWriteLatency {16} \
-      CONFIG.C0.DDR4_AxiDataWidth {512} \
-      CONFIG.C0.DDR4_AxiAddressWidth {34} \
-      CONFIG.C0.DDR4_CustomParts $part_file \
-      CONFIG.C0.DDR4_isCustom {true} \
-      ]
-
-
-    set_property -dict $properties $mig
-
-
-    # connect MEM_CTRL interface (ECC configuration + status)
-    set s_axi_mem_ctrl [create_bd_intf_pin -mode Slave -vlnv xilinx.com:interface:aximm_rtl:1.0 S_MEM_CTRL]
-
-    set m_axi_mem_ctrl [create_bd_intf_pin -mode Master -vlnv xilinx.com:interface:aximm_rtl:1.0 /host/M_MEM_CTRL]
-
-    set num_mi_old [get_property CONFIG.NUM_MI [get_bd_cells /host/out_ic]]
-    set num_mi [expr "$num_mi_old + 1"]
-    set_property -dict [list CONFIG.NUM_MI $num_mi] [get_bd_cells /host/out_ic]
-
-    connect_bd_intf_net [get_bd_intf_pins $mig/C0_DDR4_S_AXI_CTRL] $s_axi_mem_ctrl
-    connect_bd_intf_net $s_axi_mem_ctrl $m_axi_mem_ctrl
-    connect_bd_intf_net $m_axi_mem_ctrl [get_bd_intf_pins /host/out_ic/[format "M%02d_AXI" $num_mi_old]]
-
-
-    create_ddr4_constraints
 
     return $mig
   }
@@ -226,8 +218,8 @@ namespace eval platform {
   # Insert optional register slices
   proc insert_regslices {} {
     insert_regslice "dma_migic" false "/memory/dma/m32_axi" "/memory/mig_ic/S00_AXI" "/memory/mem_clk" "/memory/mem_peripheral_aresetn" "/memory"
-    insert_regslice "host_memctrl" true "/host/M_MEM_CTRL" "/memory/S_MEM_CTRL" "/clocks_and_resets/mem_clk" "/clocks_and_resets/mem_interconnect_aresetn" ""
-    insert_regslice "arch_mem" false "/arch/M_MEM_0" "/memory/S_MEM_0" "/clocks_and_resets/design_clk" "/clocks_and_resets/design_interconnect_aresetn" ""
+    #insert_regslice "host_memctrl" true "/host/M_MEM_CTRL" "/memory/S_MEM_CTRL" "/clocks_and_resets/mem_clk" "/clocks_and_resets/mem_interconnect_aresetn" ""
+    #insert_regslice "arch_mem" false "/arch/M_MEM_0" "/memory/S_MEM_0" "/clocks_and_resets/design_clk" "/clocks_and_resets/design_interconnect_aresetn" ""
     insert_regslice "host_dma" true "/host/M_DMA" "/memory/S_DMA" "/clocks_and_resets/host_clk" "/clocks_and_resets/host_interconnect_aresetn" ""
     insert_regslice "dma_host" true "/memory/M_HOST" "/host/S_HOST" "/clocks_and_resets/host_clk" "/clocks_and_resets/host_interconnect_aresetn" ""
     insert_regslice "host_arch" true "/host/M_ARCH" "/arch/S_ARCH" "/clocks_and_resets/design_clk" "/clocks_and_resets/design_interconnect_aresetn" ""
@@ -241,6 +233,13 @@ namespace eval platform {
           insert_regslice [get_property NAME $ip] true $master $slave "/arch/design_clk" "/arch/design_interconnect_aresetn" "/arch"
         }
       }
+    }
+
+    variable hbmPorts
+
+    for {set i 0} {$i < [llength $hbmPorts]} {incr i} {
+      set hbm_index [lindex $hbmPorts $i]
+      assign_bd_address [get_bd_addr_segs hbm/hbm_0/SAXI_${hbm_index}/HBM_MEM${hbm_index} ]
     }
   }
 
