@@ -126,6 +126,7 @@ namespace eval addressmap {
         set component [increase_component_name $component]
       }
       if {$stride == 0} { incr base $srange } else { incr base $stride }
+      if {$master == "/arch/M_MEM_0"} break
     }
     return $address_map
   }
