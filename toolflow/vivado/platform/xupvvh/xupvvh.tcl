@@ -75,12 +75,12 @@ namespace eval platform {
     set clk_wiz [tapasco::ip::create_clk_wiz clk_wiz]
     set_property -dict [list CONFIG.PRIM_SOURCE {No_buffer} CONFIG.CLKOUT1_REQUESTED_OUT_FREQ {300} CONFIG.RESET_TYPE {ACTIVE_LOW} CONFIG.NUM_OUT_CLKS {1} CONFIG.RESET_PORT {resetn}] $clk_wiz
     connect_bd_net [get_bd_pins /hbm/clocking_0/ibuf/IBUF_OUT] [get_bd_pins $clk_wiz/clk_in1]
-    connect_bd_net [get_bd_pins /memory/mem_peripheral_aresetn] [get_bd_pins $clk_wiz/resetn]
+    connect_bd_net [get_bd_pins /host/axi_pcie3_0/user_lnk_up] [get_bd_pins $clk_wiz/resetn]
 
     set reset_generator [tapasco::ip::create_logic_vector reset_generator]
     set_property -dict [list CONFIG.C_SIZE {1} CONFIG.C_OPERATION {and} CONFIG.LOGO_FILE {data/sym_andgate.png}] $reset_generator
 
-    connect_bd_net [get_bd_pins /memory/mem_peripheral_aresetn] [get_bd_pins $reset_generator/Op1]
+    connect_bd_net [get_bd_pins /host/axi_pcie3_0/user_lnk_up] [get_bd_pins $reset_generator/Op1]
     connect_bd_net [get_bd_pins $clk_wiz/locked] [get_bd_pins $reset_generator/Op2]
 
     connect_bd_net $c0_ddr4_ui_clk_sync_rst [get_bd_pins $reset_generator/Res]
