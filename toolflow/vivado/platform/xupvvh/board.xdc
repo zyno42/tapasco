@@ -46,6 +46,22 @@ set_property PACKAGE_PIN F18 [get_ports sys_rst_l]
 
 # Fix PCIe core to SLR0
 create_pblock pblock_axi_pcie
-resize_pblock pblock_axi_pcie -add SLR0
+resize_pblock pblock_axi_pcie -add CLOCKREGION_X4Y0:CLOCKREGION_X7Y3
 set_property IS_SOFT TRUE [get_pblocks pblock_axi_pcie]
 add_cells_to_pblock pblock_axi_pcie [get_cells [list system_i/host/axi_pcie3_0]]
+
+
+create_pblock pblock_0
+resize_pblock pblock_0 -add CLOCKREGION_X0Y0:CLOCKREGION_X3Y3
+
+create_pblock pblock_1
+resize_pblock pblock_1 -add CLOCKREGION_X0Y4:CLOCKREGION_X3Y7
+
+create_pblock pblock_2
+resize_pblock pblock_2 -add CLOCKREGION_X4Y4:CLOCKREGION_X7Y7
+
+create_pblock pblock_3
+resize_pblock pblock_3 -add CLOCKREGION_X0Y8:CLOCKREGION_X3Y11
+
+create_pblock pblock_4
+resize_pblock pblock_4 -add CLOCKREGION_X4Y8:CLOCKREGION_X7Y11

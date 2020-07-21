@@ -21,34 +21,38 @@ namespace eval platform {
   set platform_dirname "xupvvh"
   set pcie_width "x16"
 
-  variable hbmPorts [list 00 04 08 12 16 20 24 28]
-  variable hbmMCs [list 00 02 04 06 08 10 12 14]
-  variable bothStacks true
+  variable pePBlocks [list pblock_0 pblock_0 pblock_1 pblock_1 pblock_2 pblock_2 pblock_3 pblock_3 pblock_4 pblock_4]
+  variable hbmPorts [list 00 08 04 12 16 24 02 06 20 28]
+  variable hbmMCs [list 00 04 02 06 08 12 01 03 10 14]
 
   source $::env(TAPASCO_HOME_TCL)/platform/pcie/pcie_base.tcl
 
 
-    proc get_ignored_segments { } {
-      set hbmInterfaces  [list 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31]
-      set ignored [list]
-      set numInterfaces [llength $hbmInterfaces]
-      if {[expr $numInterfaces % 2] == 1} {
-        set max_mem_index [expr $numInterfaces + 1]
-      } else {
-        set max_mem_index $numInterfaces
-      }
-      for {set i 0} {$i < $numInterfaces} {incr i} {
-        for {set j 0} {$j < $max_mem_index} {incr j} {
-          set axi_index [format %02s $i]
-          set mem_index [format %02s $j]
-          lappend ignored "/hbm/hbm_0/SAXI_${axi_index}/HBM_MEM${mem_index}"
-          lappend ignored "M_AXI_HBM_${i}"
-        }
-      }
-      return $ignored
+  proc get_ignored_segments { } {
+    set hbmInterfaces  [list 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31]
+    set ignored [list]
+    set numInterfaces [llength $hbmInterfaces]
+    if {[expr $numInterfaces % 2] == 1} {
+      set max_mem_index [expr $numInterfaces + 1]
+    } else {
+      set max_mem_index $numInterfaces
     }
+    for {set i 0} {$i < $numInterfaces} {incr i} {
+      for {set j 0} {$j < $max_mem_index} {incr j} {
+        set axi_index [format %02s $i]
+        set mem_index [format %02s $j]
+        lappend ignored "/hbm/hbm_0/SAXI_${axi_index}/HBM_MEM${mem_index}"
+        lappend ignored "M_AXI_HBM_${i}"
+      }
+    }
+    return $ignored
+  }
 
   proc create_mig_core {name} {
+
+    set constraints_fn "[get_property DIRECTORY [current_project]]/pblocks.xdc"
+    set constraints_file [open $constraints_fn w+]
+
     set inst [current_bd_instance .]
 
     set mig [create_bd_cell -type hier $name]
@@ -59,17 +63,18 @@ namespace eval platform {
     set c0_ddr4_ui_clk_sync_rst [create_bd_pin -dir O -type rst c0_ddr4_ui_clk_sync_rst]
     set C0_DDR4_S_AXI [create_bd_intf_pin -mode Slave -vlnv xilinx.com:interface:aximm_rtl:1.0 C0_DDR4_S_AXI]
 
-    set masters [lsort -dictionary [tapasco::get_aximm_interfaces [get_bd_cells /arch/target_ip_*]]]
-
+    variable pePBlocks
     variable hbmPorts
     variable hbmMCs
-    variable bothStacks
+    set masters [lsort -dictionary [tapasco::get_aximm_interfaces [get_bd_cells /arch/target_ip_*]]]
+    set num_masters [llength $masters]
+    set bothStacks [expr $num_masters > 4]
 
     set hbm [tapasco::subsystem::create "/hbm"]
     current_bd_instance -quiet $hbm
     hbm::create_refclk_ports $bothStacks
 
-    hbm::generate_hbm_core $masters $hbmPorts $hbmMCs $bothStacks
+    hbm::generate_hbm_core $masters [lrange $hbmPorts 0 $num_masters-1] [lrange $hbmMCs 0 $num_masters-1] $bothStacks
     current_bd_instance -quiet $mig
 
     set clk_wiz [tapasco::ip::create_clk_wiz clk_wiz]
@@ -86,20 +91,26 @@ namespace eval platform {
     connect_bd_net $c0_ddr4_ui_clk_sync_rst [get_bd_pins $reset_generator/Res]
     connect_bd_net $c0_init_calib_complete [get_bd_pins $reset_generator/Res]
     connect_bd_net $c0_ddr4_ui_clk [get_bd_pins $clk_wiz/clk_out1]
-
-    set dma_ic [tapasco::ip::create_axi_sc dma_ic 1 [llength $hbmPorts]]
+    set dma_ic [tapasco::ip::create_axi_sc dma_ic 1 [llength $masters]]
     connect_bd_net [get_bd_pins $dma_ic/aclk] $c0_ddr4_ui_clk
     connect_bd_intf_net [get_bd_intf_pins $dma_ic/S00_AXI] $C0_DDR4_S_AXI
-    for {set i 0} {$i < [llength $hbmPorts]} {incr i} {
+    for {set i 0} {$i < [llength $masters]} {incr i} {
       set index [format %02s $i]
       set hbm_index [lindex $hbmPorts $i]
       set HBM_DMA [create_bd_intf_pin -mode Master -vlnv xilinx.com:interface:aximm_rtl:1.0 HBM_DMA_${i}]
+      set pblock [lindex $pePBlocks $i]
+      set pe [get_bd_cells -of_objects [lindex $masters $i]]
       connect_bd_intf_net [get_bd_intf_pins $dma_ic/M${index}_AXI] $HBM_DMA
       connect_bd_intf_net $HBM_DMA [get_bd_intf_pins /hbm/smartconnect_${i}/S01_AXI]
       connect_bd_net $c0_ddr4_ui_clk [get_bd_pins /hbm/smartconnect_${i}/aclk2]
+      puts $constraints_file "add_cells_to_pblock $pblock \[get_cells system_i/hbm/smartconnect_$i\]"
+      puts $constraints_file "add_cells_to_pblock $pblock \[get_cells system_i$pe\]"
     }
     current_bd_instance -quiet $inst
 
+    close $constraints_file
+    read_xdc $constraints_fn
+    set_property PROCESSING_ORDER LATE [get_files $constraints_fn]
 
     return $mig
   }
@@ -235,9 +246,10 @@ namespace eval platform {
       }
     }
 
+    set masters [lsort -dictionary [tapasco::get_aximm_interfaces [get_bd_cells /arch/target_ip_*]]]
     variable hbmPorts
 
-    for {set i 0} {$i < [llength $hbmPorts]} {incr i} {
+    for {set i 0} {$i < [llength $masters]} {incr i} {
       set hbm_index [lindex $hbmPorts $i]
       assign_bd_address [get_bd_addr_segs hbm/hbm_0/SAXI_${hbm_index}/HBM_MEM${hbm_index} ]
     }
