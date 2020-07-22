@@ -98,9 +98,13 @@ namespace eval hbm {
       CONFIG.USER_SWITCH_ENABLE_00 {false} \
       CONFIG.USER_SWITCH_ENABLE_01 {false} \
       CONFIG.USER_AXI_INPUT_CLK_FREQ {450} \
+      CONFIG.USER_AXI_INPUT_CLK1_FREQ {450} \
       CONFIG.USER_AXI_INPUT_CLK_NS {2.222} \
+      CONFIG.USER_AXI_INPUT_CLK1_NS {2.222} \
       CONFIG.USER_AXI_INPUT_CLK_PS {2222} \
+      CONFIG.USER_AXI_INPUT_CLK1_PS {2222} \
       CONFIG.USER_AXI_INPUT_CLK_XDC {2.222} \
+      CONFIG.USER_AXI_INPUT_CLK1_XDC {2.222} \
       CONFIG.HBM_MMCM_FBOUT_MULT0 {51} \
       CONFIG.USER_XSDB_INTF_EN {FALSE}
     ]
@@ -137,7 +141,7 @@ namespace eval hbm {
         lappend hbm_properties CONFIG.USER_MC${mc}_ECC_CORRECTION false
         lappend hbm_properties CONFIG.USER_MC${mc}_EN_DATA_MASK true
         lappend hbm_properties CONFIG.USER_MC${mc}_TRAFFIC_OPTION {Linear}
-        lappend hbm_properties CONFIG.USER_MC${mc}_BG_INTERLEAVE_EN true
+        lappend hbm_properties CONFIG.USER_MC${mc}_BG_INTERLEAVE_EN false
       }
     }
 
@@ -199,8 +203,10 @@ namespace eval hbm {
         set block_index [expr $i < 16 ? 0 : 1]
         set clk_index [expr ($i % 16) / 2]
         set clk_index [expr $clk_index < 7 ? $clk_index : 6]
-        connect_bd_net [get_bd_pins $clocking/axi_reset] [get_bd_pins $hbm/AXI_${hbm_index}_ARESET_N]
-        connect_bd_net [get_bd_pins $clocking/axi_clk_${clk_index}] [get_bd_pins $hbm/AXI_${hbm_index}_ACLK]
+        #connect_bd_net [get_bd_pins $clocking/axi_reset] [get_bd_pins $hbm/AXI_${hbm_index}_ARESET_N]
+        #connect_bd_net [get_bd_pins $clocking/axi_clk_${clk_index}] [get_bd_pins $hbm/AXI_${hbm_index}_ACLK]
+        connect_bd_net [get_bd_pins design_peripheral_aresetn] [get_bd_pins $hbm/AXI_${hbm_index}_ARESET_N]
+        connect_bd_net [get_bd_pins design_clk] [get_bd_pins $hbm/AXI_${hbm_index}_ACLK]
       }
   }
 
@@ -246,49 +252,51 @@ namespace eval hbm {
         connect_bd_intf_net $pin $master
 
         set hbm_index [format %02s $i]
+        connect_bd_intf_net $pin [get_bd_intf_pins $hbm/SAXI_${hbm_index}]
 
         # create smartconnect for clock domain conversion, protocol conversion (AXI4->AXI3) and data width conversion
-        set converter [create_bd_cell -type ip -vlnv xilinx.com:ip:smartconnect:1.0 smartconnect_${i}]
-        set_property -dict [list CONFIG.NUM_SI {1} CONFIG.NUM_CLKS {2} CONFIG.HAS_ARESETN {0}] $converter
+        #set converter [create_bd_cell -type ip -vlnv xilinx.com:ip:smartconnect:1.0 smartconnect_${i}]
+        #set_property -dict [list CONFIG.NUM_SI {1} CONFIG.NUM_CLKS {2} CONFIG.HAS_ARESETN {0}] $converter
         
         # create connections between PE and smartconnect, and smartconnect and HBM
 
-        connect_bd_net [get_bd_pins design_clk] [get_bd_pins $converter/aclk]
-        connect_bd_net [get_bd_pins $hbm/AXI_${hbm_index}_ACLK] [get_bd_pins $converter/aclk1]
+        #connect_bd_net [get_bd_pins design_clk] [get_bd_pins $converter/aclk]
+        #connect_bd_net [get_bd_pins $hbm/AXI_${hbm_index}_ACLK] [get_bd_pins $converter/aclk1]
 
-        if {[platform::is_regslice_enabled "hbm_pe" false] || [platform::is_regslice_enabled [format "hbm_pe%s" $hbm_index] false]} {
+        #if {[platform::is_regslice_enabled "hbm_pe" false] || [platform::is_regslice_enabled [format "hbm_pe%s" $hbm_index] false]} {
           # insert register slice between PE and smartconnect
-          set regslice_pre [create_bd_cell -type ip -vlnv xilinx.com:ip:axi_register_slice:2.1 regslice_pre_${i}]
-          set_property -dict [list CONFIG.REG_AW {15} CONFIG.REG_AR {15} CONFIG.REG_W {15} CONFIG.REG_R {15} CONFIG.REG_B {15} CONFIG.USE_AUTOPIPELINING {1}] $regslice_pre
+          #set regslice_pre [create_bd_cell -type ip -vlnv xilinx.com:ip:axi_register_slice:2.1 regslice_pre_${i}]
+          #set_property -dict [list CONFIG.REG_AW {15} CONFIG.REG_AR {15} CONFIG.REG_W {15} CONFIG.REG_R {15} CONFIG.REG_B {15} CONFIG.USE_AUTOPIPELINING {1}] $regslice_pre
 
-          connect_bd_intf_net $pin [get_bd_intf_pins $regslice_pre/S_AXI]
-          connect_bd_intf_net [get_bd_intf_pins $regslice_pre/M_AXI] [get_bd_intf_pins $converter/S00_AXI]
+          #connect_bd_intf_net $pin [get_bd_intf_pins $regslice_pre/S_AXI]
+          #connect_bd_intf_net [get_bd_intf_pins $regslice_pre/M_AXI] [get_bd_intf_pins $converter/S00_AXI]
 
-          connect_bd_net [get_bd_pins design_clk] [get_bd_pins $regslice_pre/aclk]
-          connect_bd_net [get_bd_pins design_interconnect_aresetn] [get_bd_pins $regslice_pre/aresetn]
-        } else {
-          connect_bd_intf_net $pin [get_bd_intf_pins $converter/S00_AXI]
-        }
+          #connect_bd_net [get_bd_pins design_clk] [get_bd_pins $regslice_pre/aclk]
+          #connect_bd_net [get_bd_pins design_interconnect_aresetn] [get_bd_pins $regslice_pre/aresetn]
+        #} else {
+          #connect_bd_intf_net $pin [get_bd_intf_pins $converter/S00_AXI]
+          #connect_bd_intf_net [get_bd_intf_pins $converter/M00_AXI] [get_bd_intf_pins $hbm/SAXI_${hbm_index}]
+        #}
 
-        set address_offset [tapasco::ip::create_axioffset_hbm offset_${i}]
-        set offset [format "0x0000000%02x0000000" $i]
-        set_property -dict [list CONFIG.offset $offset CONFIG.offset_bits {5}] $address_offset
-        connect_bd_intf_net [get_bd_intf_pins $converter/M00_AXI] [get_bd_intf_pins $address_offset/S_AXI]
-        connect_bd_net [get_bd_pins $hbm/AXI_${hbm_index}_ACLK] [get_bd_pins $address_offset/CLK]
-        connect_bd_net [get_bd_pins $hbm/AXI_${hbm_index}_ARESET_N] [get_bd_pins $address_offset/RST_N]
+        #set address_offset [tapasco::ip::create_axioffset_hbm offset_${i}]
+        #set offset [format "0x0000000%02x0000000" $i]
+        #set_property -dict [list CONFIG.offset $offset CONFIG.offset_bits {5}] $address_offset
+        #connect_bd_intf_net [get_bd_intf_pins $converter/M00_AXI] [get_bd_intf_pins $address_offset/S_AXI]
+        #connect_bd_net [get_bd_pins $hbm/AXI_${hbm_index}_ACLK] [get_bd_pins $address_offset/CLK]
+        #connect_bd_net [get_bd_pins $hbm/AXI_${hbm_index}_ARESET_N] [get_bd_pins $address_offset/RST_N]
 
-        if {[platform::is_regslice_enabled "hbm_hbm" false] || [platform::is_regslice_enabled [format "hbm_hbm%s" $hbm_index] false]} {
+        #if {[platform::is_regslice_enabled "hbm_hbm" false] || [platform::is_regslice_enabled [format "hbm_hbm%s" $hbm_index] false]} {
           # insert register slice between smartconnect and HBM
-          set regslice_post [create_bd_cell -type ip -vlnv xilinx.com:ip:axi_register_slice:2.1 regslice_post_${i}]
-          set_property -dict [list CONFIG.REG_AW {15} CONFIG.REG_AR {15} CONFIG.REG_W {15} CONFIG.REG_R {15} CONFIG.REG_B {15} CONFIG.USE_AUTOPIPELINING {1}] $regslice_post
+          #set regslice_post [create_bd_cell -type ip -vlnv xilinx.com:ip:axi_register_slice:2.1 regslice_post_${i}]
+          #set_property -dict [list CONFIG.REG_AW {15} CONFIG.REG_AR {15} CONFIG.REG_W {15} CONFIG.REG_R {15} CONFIG.REG_B {15} CONFIG.USE_AUTOPIPELINING {1}] $regslice_post
 
-          connect_bd_intf_net [get_bd_intf_pins $address_offset/M_AXI] [get_bd_intf_pins $regslice_post/S_AXI]
-          connect_bd_intf_net [get_bd_intf_pins $regslice_post/M_AXI] [get_bd_intf_pins $hbm/SAXI_${hbm_index}]
-          connect_bd_net [get_bd_pins $hbm/AXI_${hbm_index}_ACLK] [get_bd_pins $regslice_post/aclk]
-          connect_bd_net [get_bd_pins $hbm/AXI_${hbm_index}_ARESET_N] [get_bd_pins $regslice_post/aresetn]
-        } else {
-          connect_bd_intf_net [get_bd_intf_pins $address_offset/M_AXI] [get_bd_intf_pins $hbm/SAXI_${hbm_index}]
-        }
+          #connect_bd_intf_net [get_bd_intf_pins $address_offset/M_AXI] [get_bd_intf_pins $regslice_post/S_AXI]
+          #connect_bd_intf_net [get_bd_intf_pins $regslice_post/M_AXI] [get_bd_intf_pins $hbm/SAXI_${hbm_index}]
+          #connect_bd_net [get_bd_pins $hbm/AXI_${hbm_index}_ACLK] [get_bd_pins $regslice_post/aclk]
+          #connect_bd_net [get_bd_pins $hbm/AXI_${hbm_index}_ARESET_N] [get_bd_pins $regslice_post/aresetn]
+        #} else {
+          #connect_bd_intf_net [get_bd_intf_pins $address_offset/M_AXI] [get_bd_intf_pins $hbm/SAXI_${hbm_index}]
+        #}
 
       }
 
