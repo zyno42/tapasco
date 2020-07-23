@@ -49,6 +49,7 @@ create_pblock pblock_axi_pcie
 resize_pblock pblock_axi_pcie -add CLOCKREGION_X4Y0:CLOCKREGION_X7Y3
 set_property IS_SOFT TRUE [get_pblocks pblock_axi_pcie]
 add_cells_to_pblock pblock_axi_pcie [get_cells [list system_i/host/axi_pcie3_0]]
+add_cells_to_pblock pblock_axi_pcie [get_cells [list system_i/memory]]
 
 
 create_pblock pblock_0

@@ -97,11 +97,13 @@ namespace eval platform {
     for {set i 0} {$i < [llength $masters]} {incr i} {
       set index [format %02s $i]
       set hbm_index [lindex $hbmPorts $i]
-      set HBM_DMA [create_bd_intf_pin -mode Master -vlnv xilinx.com:interface:aximm_rtl:1.0 HBM_DMA_${i}]
+      set HBM_DMA_M [create_bd_intf_pin -mode Master -vlnv xilinx.com:interface:aximm_rtl:1.0 HBM_DMA_${i}]
+      set HBM_DMA_S [create_bd_intf_pin -mode Slave -vlnv xilinx.com:interface:aximm_rtl:1.0 /hbm/HBM_DMA_${i}]
       set pblock [lindex $pePBlocks $i]
       set pe [get_bd_cells -of_objects [lindex $masters $i]]
-      connect_bd_intf_net [get_bd_intf_pins $dma_ic/M${index}_AXI] $HBM_DMA
-      connect_bd_intf_net $HBM_DMA [get_bd_intf_pins /hbm/smartconnect_${i}/S01_AXI]
+      connect_bd_intf_net [get_bd_intf_pins $dma_ic/M${index}_AXI] $HBM_DMA_M
+      connect_bd_intf_net $HBM_DMA_M $HBM_DMA_S
+      connect_bd_intf_net $HBM_DMA_S [get_bd_intf_pins /hbm/smartconnect_${i}/S01_AXI]
       connect_bd_net $c0_ddr4_ui_clk [get_bd_pins /hbm/smartconnect_${i}/aclk2]
       puts $constraints_file "add_cells_to_pblock $pblock \[get_cells system_i/hbm/smartconnect_$i\]"
       puts $constraints_file "add_cells_to_pblock $pblock \[get_cells system_i$pe\]"
@@ -252,6 +254,9 @@ namespace eval platform {
     for {set i 0} {$i < [llength $masters]} {incr i} {
       set hbm_index [lindex $hbmPorts $i]
       assign_bd_address [get_bd_addr_segs hbm/hbm_0/SAXI_${hbm_index}/HBM_MEM${hbm_index} ]
+      if {$i >= 2} {
+        insert_regslice "hbm_dma_$i" true "/memory/HBM_DMA_$i" "/hbm/HBM_DMA_$i" "/memory/mig/c0_ddr4_ui_clk" "/memory/mig/c0_ddr4_ui_clk_sync_rst" ""
+      }
     }
   }
 
