@@ -36,4 +36,6 @@ set_clock_groups -asynchronous -group [get_clocks clk_out6_system_clk_wiz_0 -inc
 set_clock_groups -asynchronous -group [get_clocks clk_out7_system_clk_wiz_0 -include_generated_clocks]
 
 
+set_property C_USER_SCAN_CHAIN 1 [get_debug_cores dbg_hub]
+connect_debug_port dbg_hub/clk [get_nets system_i/hbm/clocking_0_hbm_ref_clk]
 set_property CLOCK_DEDICATED_ROUTE BACKBONE [get_nets system_i/hbm/clocking_0/ibuf/U0/IBUF_OUT[0]]
