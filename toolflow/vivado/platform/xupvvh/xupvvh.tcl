@@ -21,9 +21,9 @@ namespace eval platform {
   set platform_dirname "xupvvh"
   set pcie_width "x16"
 
-  variable pePBlocks [list pblock_0 pblock_0 pblock_1 pblock_1 pblock_2 pblock_2 pblock_3 pblock_3 pblock_4 pblock_4]
-  variable hbmPorts [list 00 08 04 12 16 24 02 06 20 28]
-  variable hbmMCs [list 00 04 02 06 08 12 01 03 10 14]
+  variable pePBlocks [list pblock_0 pblock_0 pblock_1 pblock_1 pblock_2 pblock_2 pblock_4 pblock_4 pblock_3 pblock_3]
+  variable hbmPorts [list 00 08 04 12 16 24 20 28 02 06]
+  variable hbmMCs [list 00 04 02 06 08 12 10 14 01 03]
 
   source $::env(TAPASCO_HOME_TCL)/platform/pcie/pcie_base.tcl
 
