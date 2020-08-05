@@ -26,7 +26,11 @@ namespace eval platform {
 
   proc get_ignored_segments { } {
     set ignored [list]
-    lappend ignored "/memory/mig/hbm_0/SAXI_00/HBM_MEM01"
+    for {set i 0} {$i < 32} {incr i} {
+      set region [format %02s $i]
+      assign_bd_address [get_bd_addr_segs memory/mig/hbm_0/SAXI_00/HBM_MEM${region} ]
+      lappend ignored "/memory/mig/hbm_0/SAXI_00/HBM_MEM${region}"
+    }
     return $ignored
   }
 
@@ -34,6 +38,9 @@ namespace eval platform {
   proc create_refclk_ports {} {
       set hbm_ref_clk_0 [ create_bd_intf_port -mode Slave -vlnv xilinx.com:interface:diff_clock_rtl:1.0 hbm_ref_clk_0 ]
       set_property CONFIG.FREQ_HZ 100000000 $hbm_ref_clk_0
+
+      set hbm_ref_clk_1 [ create_bd_intf_port -mode Slave -vlnv xilinx.com:interface:diff_clock_rtl:1.0 hbm_ref_clk_1 ]
+      set_property CONFIG.FREQ_HZ 100000000 $hbm_ref_clk_1
   }
 
   # Creates HBM configuration for given number of active HBM ports
@@ -43,8 +50,8 @@ namespace eval platform {
     # configure AXI clock freq
     set hbm_properties [list \
       CONFIG.USER_APB_EN {false} \
-      CONFIG.USER_SWITCH_ENABLE_00 {false} \
-      CONFIG.USER_SWITCH_ENABLE_01 {false} \
+      CONFIG.USER_SWITCH_ENABLE_00 {true} \
+      CONFIG.USER_SWITCH_ENABLE_01 {true} \
       CONFIG.USER_AXI_INPUT_CLK_FREQ {450} \
       CONFIG.USER_AXI_INPUT_CLK_NS {2.222} \
       CONFIG.USER_AXI_INPUT_CLK_PS {2222} \
@@ -52,21 +59,14 @@ namespace eval platform {
       CONFIG.HBM_MMCM_FBOUT_MULT0 {51} \
       CONFIG.USER_XSDB_INTF_EN {FALSE}
     ]
-    set maxSlaves 16
-    lappend hbm_properties \
-      CONFIG.USER_HBM_DENSITY {4GB} \
-      CONFIG.USER_HBM_STACK {1} \
+    set maxSlaves 32
+    lappend hbm_properties CONFIG.USER_HBM_DENSITY {8GB}
 
     # enable HBM ports and memory controllers as required (two ports per mc)
     for {set i 1} {$i < $maxSlaves} {incr i} {
       set saxi [format %02s $i]
       lappend hbm_properties CONFIG.USER_SAXI_${saxi} {false}
-      if ([even $i]) {
-        set mc [format %02s [expr {$i / 2}]]
-        lappend hbm_properties CONFIG.USER_MC_ENABLE_${mc} {false}
-      }
     }
-
 
     # configure memory controllers
     for {set i 0} {$i < $maxSlaves} {incr i} {
@@ -90,6 +90,7 @@ namespace eval platform {
     current_bd_instance $group
 
     set hbm_ref_clk [create_bd_pin -type "clk" -dir "O" "hbm_ref_clk"]
+    set hbm_ref_clk2 [create_bd_pin -type "clk" -dir "O" "hbm_ref_clk2"]
     set axi_clk_0 [create_bd_pin -type "clk" -dir "O" "axi_clk_0"]
     set mem_clk [create_bd_pin -type clk -dir O mem_clk]
     set axi_reset [create_bd_pin -type "rst" -dir "O" "axi_reset"]
@@ -98,12 +99,17 @@ namespace eval platform {
     set ibuf [tapasco::ip::create_util_buf ibuf]
     set_property -dict [ list CONFIG.C_BUF_TYPE {IBUFDS}  ] $ibuf
 
+    set ibuf2 [tapasco::ip::create_util_buf ibuf2]
+    set_property -dict [ list CONFIG.C_BUF_TYPE {IBUFDS}  ] $ibuf2
+
     connect_bd_intf_net [get_bd_intf_ports /hbm_ref_clk_0] [get_bd_intf_pins $ibuf/CLK_IN_D]
+    connect_bd_intf_net [get_bd_intf_ports /hbm_ref_clk_1] [get_bd_intf_pins $ibuf2/CLK_IN_D]
 
     set clk_wiz [tapasco::ip::create_clk_wiz clk_wiz]
     set_property -dict [list CONFIG.PRIM_SOURCE {No_buffer} CONFIG.CLKOUT1_REQUESTED_OUT_FREQ {450} CONFIG.CLKOUT2_REQUESTED_OUT_FREQ {300} CONFIG.CLKOUT2_USED {true} CONFIG.RESET_TYPE {ACTIVE_LOW} CONFIG.NUM_OUT_CLKS {2} CONFIG.RESET_PORT {resetn}] $clk_wiz
 
     connect_bd_net [get_bd_pins $ibuf/IBUF_OUT] $hbm_ref_clk
+    connect_bd_net [get_bd_pins $ibuf2/IBUF_OUT] $hbm_ref_clk2
     connect_bd_net [get_bd_pins $ibuf/IBUF_OUT] [get_bd_pins $clk_wiz/clk_in1]
 
     connect_bd_net $mem_peripheral_aresetn [get_bd_pins $clk_wiz/resetn]
@@ -164,8 +170,10 @@ namespace eval platform {
     set clocking [create_clocking]
     connect_clocking $clocking $hbm 0 1
     connect_bd_net [get_bd_pins $clocking/hbm_ref_clk] [get_bd_pins $hbm/HBM_REF_CLK_0]
+    connect_bd_net [get_bd_pins $clocking/hbm_ref_clk2] [get_bd_pins $hbm/HBM_REF_CLK_1]
 
     connect_bd_net [get_bd_pins $clocking/hbm_ref_clk] [get_bd_pins $hbm/APB_0_PCLK]
+    connect_bd_net [get_bd_pins $clocking/hbm_ref_clk2] [get_bd_pins $hbm/APB_1_PCLK]
     connect_bd_net [get_bd_pins /host/axi_pcie3_0/user_lnk_up] [get_bd_pins $hbm/APB_0_PRESET_N] [get_bd_pins $clocking/mem_peripheral_aresetn]
 
     connect_bd_net $c0_ddr4_ui_clk_sync_rst [get_bd_pins $clocking/axi_reset]
