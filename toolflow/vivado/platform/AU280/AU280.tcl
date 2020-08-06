@@ -38,9 +38,6 @@ namespace eval platform {
   proc create_refclk_ports {} {
       set hbm_ref_clk_0 [ create_bd_intf_port -mode Slave -vlnv xilinx.com:interface:diff_clock_rtl:1.0 hbm_ref_clk_0 ]
       set_property CONFIG.FREQ_HZ 100000000 $hbm_ref_clk_0
-
-      set hbm_ref_clk_1 [ create_bd_intf_port -mode Slave -vlnv xilinx.com:interface:diff_clock_rtl:1.0 hbm_ref_clk_1 ]
-      set_property CONFIG.FREQ_HZ 100000000 $hbm_ref_clk_1
   }
 
   # Creates HBM configuration for given number of active HBM ports
@@ -99,17 +96,13 @@ namespace eval platform {
     set ibuf [tapasco::ip::create_util_buf ibuf]
     set_property -dict [ list CONFIG.C_BUF_TYPE {IBUFDS}  ] $ibuf
 
-    set ibuf2 [tapasco::ip::create_util_buf ibuf2]
-    set_property -dict [ list CONFIG.C_BUF_TYPE {IBUFDS}  ] $ibuf2
-
     connect_bd_intf_net [get_bd_intf_ports /hbm_ref_clk_0] [get_bd_intf_pins $ibuf/CLK_IN_D]
-    connect_bd_intf_net [get_bd_intf_ports /hbm_ref_clk_1] [get_bd_intf_pins $ibuf2/CLK_IN_D]
 
     set clk_wiz [tapasco::ip::create_clk_wiz clk_wiz]
     set_property -dict [list CONFIG.PRIM_SOURCE {No_buffer} CONFIG.CLKOUT1_REQUESTED_OUT_FREQ {450} CONFIG.CLKOUT2_REQUESTED_OUT_FREQ {300} CONFIG.CLKOUT2_USED {true} CONFIG.RESET_TYPE {ACTIVE_LOW} CONFIG.NUM_OUT_CLKS {2} CONFIG.RESET_PORT {resetn}] $clk_wiz
 
     connect_bd_net [get_bd_pins $ibuf/IBUF_OUT] $hbm_ref_clk
-    connect_bd_net [get_bd_pins $ibuf2/IBUF_OUT] $hbm_ref_clk2
+    connect_bd_net [get_bd_pins $ibuf/IBUF_OUT] $hbm_ref_clk2
     connect_bd_net [get_bd_pins $ibuf/IBUF_OUT] [get_bd_pins $clk_wiz/clk_in1]
 
     connect_bd_net $mem_peripheral_aresetn [get_bd_pins $clk_wiz/resetn]
