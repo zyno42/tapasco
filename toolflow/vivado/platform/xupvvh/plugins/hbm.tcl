@@ -270,7 +270,7 @@ namespace eval hbm {
         connect_bd_net [get_bd_pins design_clk] [get_bd_pins $converter/aclk]
         connect_bd_net [get_bd_pins $hbm/AXI_${hbm_index}_ACLK] [get_bd_pins $converter/aclk1]
 
-        if {[platform::is_regslice_enabled "hbm_pe" false] || [platform::is_regslice_enabled [format "hbm_pe%s" $hbm_index] false]} {
+        if {[platform::is_regslice_enabled "hbm_pe" false] || [platform::is_regslice_enabled [format "hbm_pe%s" $hbm_index] false] || $i >= 0} {
           # insert register slice between PE and smartconnect
           set regslice_pre [create_bd_cell -type ip -vlnv xilinx.com:ip:axi_register_slice:2.1 regslice_pre_${i}]
           set_property -dict [list CONFIG.REG_AW {15} CONFIG.REG_AR {15} CONFIG.REG_W {15} CONFIG.REG_R {15} CONFIG.REG_B {15} CONFIG.USE_AUTOPIPELINING {1}] $regslice_pre
@@ -285,7 +285,7 @@ namespace eval hbm {
         }
 
 
-        if {[platform::is_regslice_enabled "hbm_hbm" false] || [platform::is_regslice_enabled [format "hbm_hbm%s" $hbm_index] false] || $i >= 2} {
+        if {[platform::is_regslice_enabled "hbm_hbm" false] || [platform::is_regslice_enabled [format "hbm_hbm%s" $hbm_index] false]} {
           # insert register slice between smartconnect and HBM
           set regslice_post [create_bd_cell -type ip -vlnv xilinx.com:ip:axi_register_slice:2.1 regslice_post_${i}]
           set_property -dict [list CONFIG.REG_AW {15} CONFIG.REG_AR {15} CONFIG.REG_W {15} CONFIG.REG_R {15} CONFIG.REG_B {15} CONFIG.USE_AUTOPIPELINING {1}] $regslice_post

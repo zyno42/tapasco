@@ -21,9 +21,9 @@ namespace eval platform {
   set platform_dirname "xupvvh"
   set pcie_width "x16"
 
-  variable pePBlocks [list pblock_0 pblock_0 pblock_1 pblock_1 pblock_2 pblock_2 pblock_4 pblock_4 pblock_3 pblock_3]
-  variable hbmPorts [list 00 08 04 12 16 24 20 28 02 06]
-  variable hbmMCs [list 00 04 02 06 08 12 10 14 01 03]
+  variable pePBlocks [list pblock_0 pblock_0 pblock_1 pblock_1 pblock_2 pblock_2 pblock_3 pblock_3]
+  variable hbmPorts [list 00 08 04 12 16 24 20 28]
+  variable hbmMCs [list 00 04 02 06 08 12 10 14]
 
   source $::env(TAPASCO_HOME_TCL)/platform/pcie/pcie_base.tcl
 
@@ -105,7 +105,7 @@ namespace eval platform {
       connect_bd_intf_net $HBM_DMA_M $HBM_DMA_S
       connect_bd_intf_net $HBM_DMA_S [get_bd_intf_pins /hbm/smartconnect_${i}/S01_AXI]
       connect_bd_net $c0_ddr4_ui_clk [get_bd_pins /hbm/smartconnect_${i}/aclk2]
-      puts $constraints_file "add_cells_to_pblock $pblock \[get_cells system_i/hbm/smartconnect_$i\]"
+      puts $constraints_file "add_cells_to_pblock pblock_axi_pcie \[get_cells system_i/hbm/smartconnect_$i\]"
       puts $constraints_file "add_cells_to_pblock $pblock \[get_cells system_i$pe\]"
     }
     current_bd_instance -quiet $inst
@@ -255,7 +255,7 @@ namespace eval platform {
       set hbm_index [lindex $hbmPorts $i]
       assign_bd_address [get_bd_addr_segs hbm/hbm_0/SAXI_${hbm_index}/HBM_MEM${hbm_index} ]
       if {$i >= 2} {
-        insert_regslice "hbm_dma_$i" true "/memory/HBM_DMA_$i" "/hbm/HBM_DMA_$i" "/memory/mig/c0_ddr4_ui_clk" "/memory/mig/c0_ddr4_ui_clk_sync_rst" ""
+        #insert_regslice "hbm_dma_$i" true "/memory/HBM_DMA_$i" "/hbm/HBM_DMA_$i" "/memory/mig/c0_ddr4_ui_clk" "/memory/mig/c0_ddr4_ui_clk_sync_rst" ""
       }
     }
   }
